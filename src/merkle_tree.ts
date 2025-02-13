@@ -18,7 +18,7 @@ export class MerkleTree {
   private defaultHashes: Buffer[];
 
   // [0] -> leafLevel
-  private nodes: Buffer[][];
+  private nodes: Map<number, Buffer[]> = new Map();
 
 
   /**
@@ -35,7 +35,7 @@ export class MerkleTree {
       throw Error('Bad depth');
     }
 
-    this.nodes = Array.from({ length: depth }, () => []);
+    this.initializeNodes(depth);
     this.defaultHashes = this.precomputeDefaultHashes(depth);
 
     if (!root) {
@@ -45,12 +45,18 @@ export class MerkleTree {
     }
   }
 
+  private initializeNodes(N: number) {
+    for (let i = 0; i < N; i++) {
+      this.nodes.set(i, []); // Each level starts as an empty array
+    }
+  }
+
   /**
    * Constructs or restores a new MerkleTree instance with the given `name` and `depth`.
    * The `db` contains the tree data.
    */
   static async new(db: LevelUp, name: string, depth = MAX_DEPTH) {
-    const meta: Buffer = await db.get(Buffer.from(name)).catch(() => {});
+    const meta: Buffer = await db.get(Buffer.from(name)).catch(() => { });
     if (meta) {
       const root = meta.slice(0, 32);
       const depth = meta.readUInt32LE(32);
@@ -94,12 +100,12 @@ export class MerkleTree {
 
     let i = index
     for (let lvl = 0; lvl < this.depth; lvl++) {
-      const nodesAtLvl = this.nodes[lvl];
+      // const nodesAtLvl = this.nodes[lvl];
       const lIndex = this.isLeftChild(i) ? i : i - 1;
-      const l = nodesAtLvl[lIndex] ?? this.defaultHashes[lvl];
+      const l = this.nodes.get(lvl)![lIndex] ?? this.defaultHashes[lvl];
 
       const rIndex = lIndex + 1;
-      const r = nodesAtLvl[rIndex] ?? this.defaultHashes[lvl];
+      const r = this.nodes.get(lvl)![rIndex] ?? this.defaultHashes[lvl];
 
       path[lvl] = [l, r];
       i = Math.floor(i / 2);
@@ -116,46 +122,45 @@ export class MerkleTree {
     if (!(index >= 0 && index < 2 ** this.depth)) {
       throw Error('Bad index');
     }
-
-    // update leaf node hash value
-    this.nodes[0][index] = this.hasher.hash(value);
+    const batch = this.db.batch();
+    this.storeNode(batch, 0, index, this.hasher.hash(value));
 
     let l, r: Buffer;
-    let lIndex,rIndex: number;
+    let lIndex, rIndex: number;
 
     let i = index;
     let pIndex = Math.floor(index / 2);
     for (let lvl = 0; lvl < this.depth; lvl++) {
-      const nodesAtLvl = this.nodes[lvl]!
+
 
       // Left child
       lIndex = this.isLeftChild(i) ? i : i - 1;
-      if (!nodesAtLvl[lIndex]) {
-        nodesAtLvl[lIndex] = this.defaultHashes[lvl]
-      }
-      l = nodesAtLvl[lIndex]!
-
+      l = this.nodes.get(lvl)![lIndex] ?? this.defaultHashes[lvl];
 
       // Right child
       rIndex = lIndex + 1;
-      if (!nodesAtLvl[rIndex]) {
-        nodesAtLvl[rIndex] = this.defaultHashes[lvl]
-      }
-      r = nodesAtLvl[rIndex]!
+      r = this.nodes.get(lvl)![rIndex] ?? this.defaultHashes[lvl];
 
 
       // reached last lvl
       if (lvl == this.depth - 1) {
         this.root = this.hasher.compress(l, r);
       } else {
-        this.nodes[lvl + 1][pIndex] = this.hasher.compress(l, r);
+        this.storeNode(batch, lvl + 1, pIndex, this.hasher.compress(l, r));
       }
 
       i = pIndex;
       pIndex = Math.floor(pIndex / 2);
     }
 
+    this.writeMetaData(batch);
+    this.writeMetaData();
     return this.root;
+  }
+
+  async storeNode(batch: LevelUpChain<string, Buffer>, level: number, index: number, node: Buffer) {
+    this.nodes.get(level)![index] = node;
+    batch.put(`${level}-${index}`, node);
   }
 
   precomputeDefaultHashes(depth: number): Array<Buffer> {
@@ -165,7 +170,7 @@ export class MerkleTree {
     let hash = this.hasher.hash(Buffer.alloc(64)); // 64 zero bytes
     for (let level = 0; level < depth; level++) {
       arr[level] = hash;
-      console.log(level + " -> " + arr[level].toString('hex'))
+      // console.log(level + " -> " + arr[level].toString('hex'))
 
       hash = this.hasher.compress(hash, hash);
     }
@@ -183,10 +188,4 @@ export class MerkleTree {
     return this.hasher.compress(rootChildLvl, rootChildLvl);
   }
 
-  log() {
-    // Iterate and print each buffer as a hex string
-    this.defaultHashes.forEach((buffer, index) => {
-      console.log(`Depth ${index}: ${buffer.toString('hex')}`);
-    });
-  }
 }
