@@ -72,19 +72,8 @@ describe('merkle_tree', () => {
 
     expect(tree.getRoot().toString('hex')).toBe('4b8404d05a963de56f7212fbf8123204b1eb77a4cb16ae3875679a898aaa5daa');
     expect(tree.getRoot()).toEqual(tree2.getRoot());
-    for (let i = 0; i < 1; ++i) {
-      let p: Buffer[][] = (await tree.getHashPath(i)).data;
-      let p2: Buffer[][] = (await tree2.getHashPath(i)).data;
-
-      for (let i = 0; i < 10; i++) {
-        console.log(i + "->t  " + p[0][0].toString('hex'));
-        console.log(i + "->t  " + p[0][1].toString('hex'));
-        console.log(i + "->t2 " + p2[0][0].toString('hex'));
-        console.log(i + "->t2 " + p2[0][1].toString('hex'));
-      }
-
-      // expect(await tree.getHashPath(i)).toEqual(await tree2.getHashPath(i));
-      expect("1").toEqual("2")
+    for (let i = 0; i < 128; ++i) {
+      expect(await tree.getHashPath(i)).toEqual(await tree2.getHashPath(i));
     }
   });
 

@@ -102,10 +102,10 @@ export class MerkleTree {
     for (let lvl = 0; lvl < this.depth; lvl++) {
       // const nodesAtLvl = this.nodes[lvl];
       const lIndex = this.isLeftChild(i) ? i : i - 1;
-      const l = this.nodes.get(lvl)![lIndex] ?? this.defaultHashes[lvl];
+      const l = await this.getNode(lvl, lIndex);
 
       const rIndex = lIndex + 1;
-      const r = this.nodes.get(lvl)![rIndex] ?? this.defaultHashes[lvl];
+      const r = await this.getNode(lvl, rIndex);
 
       path[lvl] = [l, r];
       i = Math.floor(i / 2);
@@ -135,11 +135,11 @@ export class MerkleTree {
 
       // Left child
       lIndex = this.isLeftChild(i) ? i : i - 1;
-      l = this.nodes.get(lvl)![lIndex] ?? this.defaultHashes[lvl];
+      l = await this.getNode(lvl, lIndex);
 
       // Right child
       rIndex = lIndex + 1;
-      r = this.nodes.get(lvl)![rIndex] ?? this.defaultHashes[lvl];
+      r = await this.getNode(lvl, rIndex);
 
 
       // reached last lvl
@@ -154,13 +154,30 @@ export class MerkleTree {
     }
 
     this.writeMetaData(batch);
-    this.writeMetaData();
+    batch.write();
     return this.root;
   }
 
   async storeNode(batch: LevelUpChain<string, Buffer>, level: number, index: number, node: Buffer) {
     this.nodes.get(level)![index] = node;
     batch.put(`${level}-${index}`, node);
+  }
+
+  async getNode(level: number, index: number) {
+    const nodesAtLvl = this.nodes.get(level)!;
+    if (index < nodesAtLvl.length) {
+      return nodesAtLvl[index];
+    }
+
+    try {
+      return await this.db.get(`${level}-${index}`);
+    } catch (err) {
+      if (err.notFound) {
+        return this.defaultHashes[level]; // Return default if key does not exist
+      }
+      throw err; // Re-throw unexpected errors
+    }
+
   }
 
   precomputeDefaultHashes(depth: number): Array<Buffer> {
