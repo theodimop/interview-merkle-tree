@@ -12,7 +12,14 @@ const LEAF_BYTES = 64; // All leaf values are 64 bytes.
  */
 export class MerkleTree {
   private hasher = new Sha256Hasher();
-  private root = Buffer.alloc(32);
+  private root: Buffer;
+
+  // [0] -> default leafHash
+  private defaultHashes: Buffer[];
+
+  // [0] -> leafLevel
+  private nodes: Buffer[][];
+
 
   /**
    * Constructs a new MerkleTree instance, either initializing an empty tree, or restoring pre-existing state values.
@@ -28,7 +35,14 @@ export class MerkleTree {
       throw Error('Bad depth');
     }
 
-    // Missing implementation.
+    this.nodes = Array.from({ length: depth }, () => []);
+    this.defaultHashes = this.precomputeDefaultHashes(depth);
+
+    if (!root) {
+      this.root = this.emptyRoot()
+    } else {
+      this.root = root;
+    }
   }
 
   /**
@@ -72,15 +86,107 @@ export class MerkleTree {
    *     d0:   [ ]         [ ]          [*]         [*]           [ ]         [ ]          [ ]        [ ]
    */
   async getHashPath(index: number) {
-    // Missing implementation.
-    return new HashPath();
+    if (!(index >= 0 && index < 2 ** this.depth)) {
+      throw Error('Bad index');
+    }
+    // The path to the root will always contain depth - 1 levels (excludes root)
+    const path: Buffer[][] = [];
+
+    let i = index
+    for (let lvl = 0; lvl < this.depth; lvl++) {
+      const nodesAtLvl = this.nodes[lvl];
+      const lIndex = this.isLeftChild(i) ? i : i - 1;
+      const l = nodesAtLvl[lIndex] ?? this.defaultHashes[lvl];
+
+      const rIndex = lIndex + 1;
+      const r = nodesAtLvl[rIndex] ?? this.defaultHashes[lvl];
+
+      path[lvl] = [l, r];
+      i = Math.floor(i / 2);
+    }
+
+    // [0] -> [lleaf, rleaf]
+    return new HashPath(path);
   }
 
   /**
    * Updates the tree with `value` at `index`. Returns the new tree root.
    */
   async updateElement(index: number, value: Buffer) {
-    // Missing implementation.
+    if (!(index >= 0 && index < 2 ** this.depth)) {
+      throw Error('Bad index');
+    }
+
+    // update leaf node hash value
+    this.nodes[0][index] = this.hasher.hash(value);
+
+    let l, r: Buffer;
+    let lIndex,rIndex: number;
+
+    let i = index;
+    let pIndex = Math.floor(index / 2);
+    for (let lvl = 0; lvl < this.depth; lvl++) {
+      const nodesAtLvl = this.nodes[lvl]!
+
+      // Left child
+      lIndex = this.isLeftChild(i) ? i : i - 1;
+      if (!nodesAtLvl[lIndex]) {
+        nodesAtLvl[lIndex] = this.defaultHashes[lvl]
+      }
+      l = nodesAtLvl[lIndex]!
+
+
+      // Right child
+      rIndex = lIndex + 1;
+      if (!nodesAtLvl[rIndex]) {
+        nodesAtLvl[rIndex] = this.defaultHashes[lvl]
+      }
+      r = nodesAtLvl[rIndex]!
+
+
+      // reached last lvl
+      if (lvl == this.depth - 1) {
+        this.root = this.hasher.compress(l, r);
+      } else {
+        this.nodes[lvl + 1][pIndex] = this.hasher.compress(l, r);
+      }
+
+      i = pIndex;
+      pIndex = Math.floor(pIndex / 2);
+    }
+
     return this.root;
+  }
+
+  precomputeDefaultHashes(depth: number): Array<Buffer> {
+    let arr = new Array(depth);
+
+    // Precompute default hash values
+    let hash = this.hasher.hash(Buffer.alloc(64)); // 64 zero bytes
+    for (let level = 0; level < depth; level++) {
+      arr[level] = hash;
+      console.log(level + " -> " + arr[level].toString('hex'))
+
+      hash = this.hasher.compress(hash, hash);
+    }
+
+
+    return arr;
+  }
+
+  isLeftChild(index: number) {
+    return index % 2 === 0;
+  }
+
+  emptyRoot() {
+    let rootChildLvl = this.defaultHashes[this.depth - 1].slice(0, 32);
+    return this.hasher.compress(rootChildLvl, rootChildLvl);
+  }
+
+  log() {
+    // Iterate and print each buffer as a hex string
+    this.defaultHashes.forEach((buffer, index) => {
+      console.log(`Depth ${index}: ${buffer.toString('hex')}`);
+    });
   }
 }
