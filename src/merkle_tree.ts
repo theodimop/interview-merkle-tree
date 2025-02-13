@@ -135,15 +135,21 @@ export class MerkleTree {
       const rIndex = lIndex + 1;
       const r = await this.getNode(lvl, rIndex);
 
-      // Update parent or Root 
-      if (lvl++ < this.depth - 1) {
+
+      const notReachedRoot = lvl + 1 < this.depth;
+      if (notReachedRoot) {
         const parentIndex = Math.floor(i / 2);
-        this.storeNode(batch, lvl, parentIndex, this.hasher.compress(l, r));
+        const parentLevel = lvl + 1;
+        const parentHash = this.hasher.compress(l, r);
+        this.storeNode(batch, parentLevel, parentIndex, parentHash);
         i = parentIndex;
+        lvl++;
+
       } else {
         this.root = this.hasher.compress(l, r);
         break;
       }
+
     }
 
     this.writeMetaData(batch);
