@@ -125,7 +125,8 @@ export class MerkleTree {
 
     // Update Tree Nodes on the hash path
     let i = index;
-    for (let lvl = 0; lvl < this.depth; lvl++) {
+    let lvl = 0;
+    for (; ;) {
       // Left child
       const lIndex = this.isLeftChild(i) ? i : i - 1;
       const l = await this.getNode(lvl, lIndex);
@@ -134,14 +135,14 @@ export class MerkleTree {
       const rIndex = lIndex + 1;
       const r = await this.getNode(lvl, rIndex);
 
-
-      // reached last lvl
-      if (lvl == this.depth - 1) {
-        this.root = this.hasher.compress(l, r);
-      } else {
+      // Update parent or Root 
+      if (lvl++ < this.depth - 1) {
         const parentIndex = Math.floor(i / 2);
-        this.storeNode(batch, lvl + 1, parentIndex, this.hasher.compress(l, r));
+        this.storeNode(batch, lvl, parentIndex, this.hasher.compress(l, r));
         i = parentIndex;
+      } else {
+        this.root = this.hasher.compress(l, r);
+        break;
       }
     }
 
